@@ -59,7 +59,7 @@ def upstep(filters, size, stride, padding, apply_dropout=False, c_num=1, leaky=T
 
 def Generator():
   ## 원래는 51, 71이나 그림을 생각하면 52, 72로 바꾸어 2번 줄였을 때도 13, 18로 정수로 떨어지게 바꾸었다.
-  inputs = tf.keras.layers.Input(shape=[48,72,5])
+  inputs = tf.keras.layers.Input(shape=(48,72,4))
 
   down_stack = [
     downstep(64, 3, 1, 'same', 1, apply_batchnorm=True, c_num=2), # (bs, 128, 128, 64)
@@ -111,7 +111,6 @@ def Generator():
     x = up(x)
 
     y = short(skip)
-    print(y)
     x = tf.keras.layers.Concatenate()([x, y])
     x = res(x)
 
@@ -119,5 +118,5 @@ def Generator():
 
   return tf.keras.Model(inputs=inputs, outputs=x)
 
-generator = Generator()
-tf.keras.utils.plot_model(generator, to_file='generator.png',show_shapes=True, dpi=64)
+# generator = Generator()
+# tf.keras.utils.plot_model(generator, to_file='generator.png',show_shapes=True, dpi=64)
