@@ -102,7 +102,6 @@ def Generator():
   for dil in dilation:
     x = dil(x)
 
-
   # Upsampling and establishing the skip connections
 
   for upst, skip in zip(up_stack, skips):

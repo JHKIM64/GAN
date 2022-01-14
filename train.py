@@ -12,25 +12,31 @@ import model.samplegen as sgen
 import model.discriminator as disc
 from model.loss import discriminator_loss, generator_loss
 from model.optimizer import discriminator_optimizer, generator_optimizer
-from util.plotcuv import image
+from util.plotcuv import imaging
 import data.get_data as dataset
-# train_in, train_real, C_max, C_min, W_max, W_min = dataset.get_train_data()
-# test_in = dataset.get_test_data(C_max, C_min, W_max, W_min)
+train_in, train_real, C_max, W_max, W_min, T_max, P_max = dataset.get_train_data()
+test_in = dataset.get_test_data(C_max, W_max, W_min)
+
+C_max = 1840.5445256832277/2
 
 with open('train_input.pickle', 'rb') as f:
   train_in = pickle.load(f)
   train_in = train_in.astype(np.float32)
-  C_max = np.max(train_in[:,:,:,0])
+  train_in = train_in[:, :, :, [4, 0, 1, 5]]
+
+print(np.max(train_in[:,:,:,0]))
 
 with open('train_real.pickle', 'rb') as f:
   train_real = pickle.load(f)
+  train_real = train_real[:,:,:,[4, 0, 1]]
   train_real = train_real.astype(np.float32)
 
 with open('test_input.pickle', 'rb') as f:
   test_in = pickle.load(f)
   test_in = test_in.astype(np.float32)
+  test_in = test_in.transpose((0, 2, 3, 1))
 
-print(train_in.shape, train_real.shape, test_in.shape)
+print(train_real.shape, test_in.shape)
 
 generator = gen.Generator()
 discriminator = disc.Discriminator()
@@ -41,18 +47,15 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
                                  discriminator_optimizer=discriminator_optimizer,
                                  generator=generator,
                                  discriminator=discriminator)
-def generate_images(model, test_input, tar):
+
+def generate_images(model, test_input, tar, text):
   prediction = model(test_input, training=True)
-  plt.figure(figsize=(15,15))
   prediction_att = test_input[:,:,:,1:-1]
   prediction = tf.concat((prediction,prediction_att),axis=3)
-  print(tar[0].shape)
   display_list = [test_input[0], tar[0], prediction[0]]
-  title = ['Input Image', 'Ground Truth', 'Predicted Image']
+  title = ['Input', 'Truth', 'Predicted']
 
-  for i in range(3):
-    # getting the pixel values between [0, 1] to plot it.
-    image(title[i],display_list[i],C_max)
+  imaging(title,display_list,text, C_max)
   # for i in range(3):
   #   plt.subplot(1, 3, i + 1)
   #   plt.title(title[i])
@@ -61,7 +64,7 @@ def generate_images(model, test_input, tar):
   #   plt.axis('off')
   # plt.show()
 
-EPOCHS = 150
+EPOCHS = 10
 
 log_dir="logs/"
 
@@ -97,36 +100,40 @@ def train_step(input_image, target, epoch):
     tf.summary.scalar('gen_l1_loss', gen_l1_loss, step=epoch)
     tf.summary.scalar('disc_loss', disc_loss, step=epoch)
 
+
 def fit(train_in, train_real, epochs,test_in):
-  for epoch in range(epochs):
-    start = time.time()
+  train_ds = tf.data.Dataset.from_tensor_slices((tf.constant(train_in), tf.constant(train_real)))
+  train_ds = train_ds.shuffle(14975)
+  train_ds = train_ds.batch(batch_size=1)
+  display.clear_output(wait=True)
 
-    display.clear_output(wait=True)
-    train_ds = tf.data.Dataset.from_tensor_slices((tf.constant(train_in), tf.constant(train_real)))
-    train_ds = train_ds.batch(batch_size=1)
-    for example_input, example_target in train_ds.take(1):
-      generate_images(generator, example_input, example_target)
-    print("Epoch: ", epoch)
 
-    # Train
-    for n, (input_image, target) in train_ds.enumerate():
-      print('.', end='')
-      if n==5000 :
+  with tf.device('/device:GPU:0'):
+    for epoch in range(epochs):
+      start = time.time()
+
+      for n, (example_input, example_target) in train_ds.enumerate():
+        generate_images(generator, example_input, example_target, 'epoch'+str(epoch))
         break
-      if (n + 1) % 100 == 0:
-        print()
-      train_step(input_image, target, epoch)
-    print()
+      print("Epoch: ", epoch)
 
-    # saving (checkpoint) the model every 20 epochs
-    if (epoch + 1) % 20 == 0:
-      checkpoint.save(file_prefix = checkpoint_prefix)
+      # Train
+      for n, (input_image, target) in train_ds.enumerate():
+        print('.', end='')
+        if (n + 1) % 100 == 0:
+          print()
+        train_step(input_image, target, epoch)
+      print()
 
-    print ('Time taken for epoch {} is {} sec\n'.format(epoch + 1,
-                                                        time.time()-start))
+      # saving (checkpoint) the model every 20 epochs
+      if (epoch + 1) % 20 == 0:
+        checkpoint.save(file_prefix = checkpoint_prefix)
+
+      print ('Time taken for epoch {} is {} sec\n'.format(epoch + 1,
+                                                          time.time()-start))
   checkpoint.save(file_prefix = checkpoint_prefix)
 
 fit(train_in, train_real, EPOCHS, test_in)
 
-for inp, tar in test_in.take(50):
-  generate_images(generator, inp, tar)
+for n, (inp, tar) in test_in.enumerate():
+  generate_images(generator, inp, tar, 'test'+str(n))
